@@ -1,0 +1,29 @@
+{
+  "name": "production-planner",
+  "version": "1.0.0",
+  "description": "A full-stack production planning web app built with Node.js, Express, MongoDB, and EJS.",
+  "main": "src/app.js",
+  "type": "module",
+  "scripts": {
+    "start":  "node src/app.js",
+    "dev":    "nodemon src/app.js",
+    "seed":   "node src/config/seed.js",
+    "debug":  "nodemon --inspect src/app.js",
+    "test":   "echo \"No tests configured yet\" && exit 0"
+  },
+  "keywords": ["production", "planning", "manufacturing", "nodejs", "express", "mongodb"],
+  "author": "Your Name",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "ejs": "^5.0.2",
+    "express": "^5.2.1",
+    "express-validator": "^7.3.2",
+    "mongoose": "^9.4.1",
+    "morgan": "^1.10.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
