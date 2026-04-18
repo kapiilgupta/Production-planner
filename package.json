@@ -4,14 +4,24 @@
   "description": "A full-stack production planning web app built with Node.js, Express, MongoDB, and EJS.",
   "main": "src/app.js",
   "type": "module",
-  "scripts": {
-    "start":  "node src/app.js",
-    "dev":    "nodemon src/app.js",
-    "seed":   "node src/config/seed.js",
-    "debug":  "nodemon --inspect src/app.js",
-    "test":   "echo \"No tests configured yet\" && exit 0"
+  "engines": {
+    "node": "20.x"
   },
-  "keywords": ["production", "planning", "manufacturing", "nodejs", "express", "mongodb"],
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "seed": "node src/config/seed.js",
+    "debug": "nodemon --inspect src/app.js",
+    "test": "echo \"No tests configured yet\" && exit 0"
+  },
+  "keywords": [
+    "production",
+    "planning",
+    "manufacturing",
+    "nodejs",
+    "express",
+    "mongodb"
+  ],
   "author": "Your Name",
   "license": "ISC",
   "dependencies": {
