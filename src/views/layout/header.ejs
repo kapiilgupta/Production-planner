@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= typeof title !== 'undefined' ? title + ' | ' : '' %>Production Planner</title>
+  <meta name="description" content="Automatic Production Planning & Scheduling System" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <script>
+    // ── Toast helper ────────────────────────────────────────────
+    function showToast(message, type = 'info', duration = 3500) {
+      let container = document.getElementById('toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        if (document.body) document.body.appendChild(container);
+      }
+      if (container) {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), duration);
+      }
+    }
+
+    // ── Generic API helper ──────────────────────────────────────
+    async function apiFetch(url, options = {}) {
+      const defaults = { headers: { 'Content-Type': 'application/json' } };
+      const res = await fetch(url, { ...defaults, ...options,
+        headers: { ...defaults.headers, ...(options.headers || {}) } });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || `Request failed (${res.status})`);
+      return json;
+    }
+  </script>
+</head>
+<body>
+
+<!-- ── Sidebar ──────────────────────────────────────────────── -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <h1>⚙️ Production<br>Planner</h1>
+    <span>Auto Planning & Scheduling</span>
+  </div>
+
+  <ul class="sidebar-nav">
+    <li>
+      <a href="/" class="<%= typeof activePage !== 'undefined' && activePage === 'dashboard' ? 'active' : '' %>">
+        <span class="nav-icon">🏠</span> Dashboard
+      </a>
+    </li>
+    <li>
+      <a href="/products" class="<%= typeof activePage !== 'undefined' && activePage === 'products' ? 'active' : '' %>">
+        <span class="nav-icon">📦</span> Products
+      </a>
+    </li>
+    <li>
+      <a href="/inventory" class="<%= typeof activePage !== 'undefined' && activePage === 'inventory' ? 'active' : '' %>">
+        <span class="nav-icon">🏭</span> Inventory
+      </a>
+    </li>
+    <li>
+      <a href="/forecast" class="<%= typeof activePage !== 'undefined' && activePage === 'forecast' ? 'active' : '' %>">
+        <span class="nav-icon">📈</span> Forecast
+      </a>
+    </li>
+    <li>
+      <a href="/planning" class="<%= typeof activePage !== 'undefined' && activePage === 'planning' ? 'active' : '' %>">
+        <span class="nav-icon">🗂️</span> Production Orders
+      </a>
+    </li>
+    <li>
+      <a href="/schedule" class="<%= typeof activePage !== 'undefined' && activePage === 'schedule' ? 'active' : '' %>">
+        <span class="nav-icon">🗓️</span> Schedule
+      </a>
+    </li>
+    <li>
+      <a href="/machines" class="<%= typeof activePage !== 'undefined' && activePage === 'machines' ? 'active' : '' %>">
+        <span class="nav-icon">🔧</span> Machines
+      </a>
+    </li>
+  </ul>
+
+  <div class="sidebar-footer">
+    &copy; <%= new Date().getFullYear() %> Production Planner
+  </div>
+</aside>
+
+<!-- ── Main wrapper ──────────────────────────────────────────── -->
+<div class="main-wrapper">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div style="display:flex;align-items:center;gap:.75rem;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <span class="topbar-title"><%= typeof title !== 'undefined' ? title : 'Production Planner' %></span>
+    </div>
+    <div class="topbar-actions">
+      <span style="font-size:.8rem;color:var(--text-muted);" id="clock"></span>
+    </div>
+  </header>
+
+  <!-- Page content injected here -->
+  <main class="page-content">

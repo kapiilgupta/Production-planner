@@ -1,0 +1,224 @@
+<%- include('layout/header', { title: 'Dashboard', activePage: 'dashboard' }) %>
+
+<div class="page-header">
+  <h2>📊 Dashboard</h2>
+  <span style="font-size:.85rem;color:var(--text-muted);">
+    <%= new Date().toLocaleDateString('en-IN', {weekday:'long',year:'numeric',month:'long',day:'numeric'}) %>
+  </span>
+</div>
+
+<!-- ── Stat cards ─────────────────────────────────────────────── -->
+<div class="stats-grid" id="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon stat-icon--blue">📦</div>
+    <div class="stat-info">
+      <div class="stat-value" id="stat-products">—</div>
+      <div class="stat-label">Total Products</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon stat-icon--red">⚠️</div>
+    <div class="stat-info">
+      <div class="stat-value" id="stat-lowstock">—</div>
+      <div class="stat-label">Low Stock Alerts</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon stat-icon--orange">🗂️</div>
+    <div class="stat-info">
+      <div class="stat-value" id="stat-orders">—</div>
+      <div class="stat-label">Pending Orders</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon stat-icon--green">🗓️</div>
+    <div class="stat-info">
+      <div class="stat-value" id="stat-slots">—</div>
+      <div class="stat-label">Today's Slots</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Quick actions ──────────────────────────────────────────── -->
+<div class="section-title">Quick Actions</div>
+<div class="quick-actions">
+  <button class="btn btn-primary" id="btn-gen-forecast">📈 Generate Forecast</button>
+  <button class="btn btn-success" id="btn-gen-orders">🗂️ Generate Orders</button>
+  <button class="btn btn-warning" id="btn-gen-schedule">🗓️ Generate Schedule</button>
+</div>
+
+<!-- ── Quick Action Modal ─────────────────────────────────────── -->
+<div class="modal-overlay" id="qa-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="qa-modal-title">Action</span>
+      <button class="modal-close" onclick="closeQaModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="qa-modal-body"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Recent orders ──────────────────────────────────────────── -->
+<div class="card" style="margin-top:1.75rem;">
+  <div class="card-header">
+    <span class="card-title">Recent Production Orders</span>
+    <a href="/planning" class="btn btn-sm btn-outline">View All →</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Order #</th><th>Product</th><th>Due Date</th>
+          <th>Items</th><th>Total Qty</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="recent-orders-body">
+        <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ── Load dashboard stats ─────────────────────────────────────────
+const today = new Date().toISOString().slice(0,10);
+
+async function loadStats() {
+  try {
+    const [products, alerts, orders, slots] = await Promise.all([
+      apiFetch('/api/products'),
+      apiFetch('/api/inventory/alerts'),
+      apiFetch('/api/production-orders?status=pending'),
+      apiFetch('/api/schedule?date=' + today),
+    ]);
+    document.getElementById('stat-products').textContent = products.count ?? 0;
+    document.getElementById('stat-lowstock').textContent = alerts.count ?? 0;
+    document.getElementById('stat-orders').textContent   = orders.count ?? 0;
+    document.getElementById('stat-slots').textContent    = slots.count ?? 0;
+  } catch(e) { showToast('Failed to load stats: ' + e.message, 'error'); }
+}
+
+async function loadRecentOrders() {
+  const tbody = document.getElementById('recent-orders-body');
+  try {
+    const res = await apiFetch('/api/production-orders');
+    const orders = res.data.slice(0,8);
+    if (!orders.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">No production orders yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = orders.map(o => `
+      <tr>
+        <td class="td-mono"><strong>${o.orderNumber}</strong></td>
+        <td>${o.productId?.name ?? '—'}</td>
+        <td>${o.dueDate ? new Date(o.dueDate).toLocaleDateString() : '—'}</td>
+        <td>${o.items?.length ?? 0}</td>
+        <td>${o.totalPlannedQty?.toLocaleString() ?? 0}</td>
+        <td><span class="badge badge-${o.status}">${o.status}</span></td>
+      </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--red);">${e.message}</td></tr>`;
+  }
+}
+
+// ── Quick action modals ──────────────────────────────────────────
+function openQaModal(title, bodyHTML) {
+  document.getElementById('qa-modal-title').textContent = title;
+  document.getElementById('qa-modal-body').innerHTML = bodyHTML;
+  document.getElementById('qa-modal').classList.add('open');
+}
+function closeQaModal() {
+  document.getElementById('qa-modal').classList.remove('open');
+}
+
+document.getElementById('btn-gen-forecast').addEventListener('click', () => {
+  openQaModal('📈 Generate Forecast', `
+    <div class="form-group">
+      <label class="form-label">Forecast Period (YYYY-MM)</label>
+      <input class="form-control" id="qa-period" placeholder="e.g. 2025-09" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Historical Data (JSON)</label>
+      <textarea class="form-control" id="qa-hist" rows="5" placeholder='{"SKU-001":[{"period":"2025-06","soldQty":120},{"period":"2025-07","soldQty":130},{"period":"2025-08","soldQty":110}]}'></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="runForecast()">Run Forecast</button>
+      <button class="btn btn-secondary" onclick="closeQaModal()">Cancel</button>
+    </div>
+    <div id="qa-result" style="margin-top:1rem;"></div>
+  `);
+});
+
+async function runForecast() {
+  const period = document.getElementById('qa-period').value.trim();
+  const histRaw= document.getElementById('qa-hist').value.trim();
+  const resultEl= document.getElementById('qa-result');
+  let historicalData;
+  try { historicalData = JSON.parse(histRaw); } catch { resultEl.innerHTML = '<div class="alert alert-error">Invalid JSON in historical data.</div>'; return; }
+  try {
+    resultEl.innerHTML = '<div class="alert alert-info">Running…</div>';
+    const res = await apiFetch('/api/forecast/generate', { method:'POST', body: JSON.stringify({ forecastPeriod: period, historicalData }) });
+    resultEl.innerHTML = `<div class="alert alert-success">✅ ${res.count} forecast(s) generated for ${period}.</div>`;
+    showToast('Forecast generated!', 'success');
+  } catch(e) { resultEl.innerHTML = `<div class="alert alert-error">${e.message}</div>`; }
+}
+
+document.getElementById('btn-gen-orders').addEventListener('click', () => {
+  openQaModal('🗂️ Generate Production Orders', `
+    <div class="form-group">
+      <label class="form-label">Forecast Period (YYYY-MM)</label>
+      <input class="form-control" id="qa-order-period" placeholder="e.g. 2025-09" />
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-success" onclick="runOrders()">Generate Orders</button>
+      <button class="btn btn-secondary" onclick="closeQaModal()">Cancel</button>
+    </div>
+    <div id="qa-order-result" style="margin-top:1rem;"></div>
+  `);
+});
+
+async function runOrders() {
+  const period = document.getElementById('qa-order-period').value.trim();
+  const resultEl = document.getElementById('qa-order-result');
+  try {
+    resultEl.innerHTML = '<div class="alert alert-info">Running planning engine…</div>';
+    const res = await apiFetch('/api/production-orders/generate', { method:'POST', body: JSON.stringify({ forecastPeriod: period }) });
+    resultEl.innerHTML = `<div class="alert alert-success">✅ ${res.message}</div>`;
+    showToast(res.message, 'success');
+    loadStats(); loadRecentOrders();
+  } catch(e) { resultEl.innerHTML = `<div class="alert alert-error">${e.message}</div>`; }
+}
+
+document.getElementById('btn-gen-schedule').addEventListener('click', () => {
+  openQaModal('🗓️ Generate Schedule', `
+    <div class="form-group">
+      <label class="form-label">Schedule Start Date</label>
+      <input class="form-control" id="qa-sched-date" type="date" value="${today}" />
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-warning" onclick="runSchedule()">Generate Schedule</button>
+      <button class="btn btn-secondary" onclick="closeQaModal()">Cancel</button>
+    </div>
+    <div id="qa-sched-result" style="margin-top:1rem;"></div>
+  `);
+});
+
+async function runSchedule() {
+  const date = document.getElementById('qa-sched-date').value;
+  const resultEl = document.getElementById('qa-sched-result');
+  try {
+    resultEl.innerHTML = '<div class="alert alert-info">Running scheduling engine…</div>';
+    const res = await apiFetch('/api/schedule/generate', { method:'POST', body: JSON.stringify({ scheduleDate: date }) });
+    resultEl.innerHTML = `<div class="alert alert-success">✅ ${res.message}</div>`;
+    showToast(res.message, 'success');
+    loadStats();
+  } catch(e) { resultEl.innerHTML = `<div class="alert alert-error">${e.message}</div>`; }
+}
+
+loadStats();
+loadRecentOrders();
+</script>
+
+<%- include('layout/footer') %>

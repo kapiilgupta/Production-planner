@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> | Production Planner</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <%- include('../partials/navbar') %>
+  <main class="main-content">
+    <div class="page-header">
+      <h1 class="page-title"><%= title %></h1>
+      <a href="/schedule" class="btn btn-secondary">← Back</a>
+    </div>
+
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-error"><ul><% errors.forEach(e => { %><li><%= e.msg %></li><% }) %></ul></div>
+    <% } %>
+
+    <div class="card form-card">
+      <form method="POST" action="/schedule">
+        <div class="form-group">
+          <label for="productionOrder">Production Order *</label>
+          <select id="productionOrder" name="productionOrder" class="input" required>
+            <option value="">-- Select Order --</option>
+            <% orders.forEach(o => { %>
+              <option value="<%= o._id %>"><%= o.orderNumber %> – <%= o.product ? o.product.name : '' %> (Qty: <%= o.quantity %>)</option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="machine">Machine *</label>
+          <select id="machine" name="machine" class="input" required>
+            <option value="">-- Select Machine --</option>
+            <% machines.forEach(m => { %>
+              <option value="<%= m._id %>"><%= m.name %> (<%= m.type %> | <%= m.capacityPerHour %>/hr)</option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="startTime">Start Time *</label>
+            <input id="startTime" type="datetime-local" name="startTime" class="input" required />
+          </div>
+          <div class="form-group">
+            <label for="endTime">End Time *</label>
+            <input id="endTime" type="datetime-local" name="endTime" class="input" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="notes">Notes</label>
+          <textarea id="notes" name="notes" class="input" rows="2"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Schedule Slot</button>
+          <a href="/schedule" class="btn btn-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </main>
+  <%- include('../partials/footer') %>
+  <script src="/js/main.js"></script>
+</body>
+</html>

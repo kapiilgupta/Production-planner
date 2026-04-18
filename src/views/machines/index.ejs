@@ -1,0 +1,190 @@
+<%- include('../layout/header', { title: 'Machines', activePage: 'machines' }) %>
+
+<div class="page-header">
+  <h2>🔧 Machines</h2>
+  <button class="btn btn-primary" onclick="openAddModal()">+ Add Machine</button>
+</div>
+
+<!-- ── Utilization date picker ────────────────────────────────── -->
+<div class="filter-bar">
+  <label style="font-size:.85rem;color:var(--text-muted);white-space:nowrap;">Utilization Date:</label>
+  <input class="form-control" id="util-date" type="date" style="max-width:180px;" />
+  <button class="btn btn-outline" onclick="loadUtilization()">📊 Refresh Utilization</button>
+</div>
+
+<!-- ── Machines + utilization table ──────────────────────────── -->
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Machine Name</th><th>Type</th><th>Shift (min)</th>
+          <th>Operational</th><th>Scheduled Mins</th><th>Utilization</th>
+          <th>Slots Today</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="machines-body">
+        <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Add Machine Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <span class="modal-title">Add New Machine</span>
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="machine-form" onsubmit="submitMachine(event)">
+        <div class="form-group">
+          <label class="form-label">Machine Name *</label>
+          <input class="form-control" name="name" required placeholder="e.g. Sewing Line 3" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Type *</label>
+            <select class="form-control" name="type" required>
+              <option value="">— Select —</option>
+              <option>Sewing</option><option>Cutting</option>
+              <option>Pressing</option><option>Packing</option>
+              <option>Embroidery</option><option>Printing</option>
+              <option>CNC</option><option>Assembly</option><option>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Shift Minutes</label>
+            <input class="form-control" name="shiftMinutes" type="number" min="60" max="1440" value="480" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Location</label>
+          <input class="form-control" name="location" placeholder="e.g. Factory Floor A" />
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:.5rem;">
+          <input type="checkbox" name="isOperational" id="chk-operational" checked style="width:16px;height:16px;" />
+          <label for="chk-operational" style="font-size:.875rem;font-weight:500;margin:0;">Operational</label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Add Machine</button>
+          <button type="button" class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+        </div>
+        <div id="form-result" style="margin-top:.75rem;"></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+const today = new Date().toISOString().slice(0,10);
+document.getElementById('util-date').value = today;
+
+let machinesList   = [];
+let utilizationMap = {};
+
+async function loadData() {
+  await Promise.all([loadMachines(), loadUtilization()]);
+}
+
+async function loadMachines() {
+  try {
+    const res    = await apiFetch('/api/machines');
+    machinesList  = res.data || [];
+    renderTable();
+  } catch(e) {
+    document.getElementById('machines-body').innerHTML =
+      `<tr><td colspan="8" style="color:var(--red);text-align:center;">${e.message}</td></tr>`;
+  }
+}
+
+async function loadUtilization() {
+  const date = document.getElementById('util-date').value || today;
+  try {
+    const res = await apiFetch(`/api/schedule/utilization?date=${date}`);
+    utilizationMap = {};
+    (res.data || []).forEach(u => { utilizationMap[u.machineId] = u; });
+    renderTable();
+  } catch(e) { showToast('Utilization load failed: ' + e.message, 'error'); }
+}
+
+function renderTable() {
+  const tbody = document.getElementById('machines-body');
+  if (!machinesList.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">No machines configured. Add your first machine.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = machinesList.map(m => {
+    const util     = utilizationMap[m._id] || {};
+    const pct      = util.utilizationPct   ?? 0;
+    const schMins  = util.scheduledMinutes ?? 0;
+    const slots    = util.slotsCount       ?? 0;
+    const barClass = pct >= 100 ? 'over' : pct >= 80 ? 'high' : '';
+    const statusBadge = m.isOperational
+      ? '<span class="badge badge-ok">✓ Operational</span>'
+      : '<span class="badge badge-cancelled">✗ Offline</span>';
+
+    return `<tr>
+      <td><strong>${m.name}</strong>${m.location ? `<br><small style="color:var(--text-muted);">${m.location}</small>` : ''}</td>
+      <td><span class="badge badge-scheduled">${m.type}</span></td>
+      <td>${m.shiftMinutes} min <small style="color:var(--text-muted);">(${(m.shiftMinutes/60).toFixed(1)} h)</small></td>
+      <td>${statusBadge}</td>
+      <td>${schMins.toLocaleString()} min</td>
+      <td>
+        <div class="util-bar"><div class="util-bar-fill ${barClass}" style="width:${Math.min(pct,100)}%"></div></div>
+        <div class="util-label">${pct}%
+          <span style="font-size:.7rem;color:${pct>=100?'var(--red)':pct>=80?'var(--orange)':'var(--green)'}">
+            ${pct>=100?'⚠ Over-scheduled':pct>=80?'High':'Normal'}
+          </span>
+        </div>
+      </td>
+      <td>${slots}</td>
+      <td>
+        <button class="btn btn-sm btn-outline" onclick="toggleOperational('${m._id}', ${!m.isOperational})">
+          ${m.isOperational ? 'Set Offline' : 'Set Online'}
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function toggleOperational(id, newState) {
+  try {
+    await apiFetch(`/api/machines/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ isOperational: newState }),
+    });
+    showToast(`Machine ${newState ? 'set online' : 'set offline'}`, 'success');
+    loadData();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function openAddModal()  { document.getElementById('add-modal').classList.add('open');    document.getElementById('form-result').innerHTML=''; document.getElementById('machine-form').reset(); }
+function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
+
+async function submitMachine(event) {
+  event.preventDefault();
+  const form   = event.target;
+  const result = document.getElementById('form-result');
+  const body   = {
+    name:          form.name.value.trim(),
+    type:          form.type.value,
+    shiftMinutes:  parseInt(form.shiftMinutes.value),
+    isOperational: form.isOperational.checked,
+    location:      form.location?.value?.trim() || '',
+  };
+  try {
+    result.innerHTML = '<div class="alert alert-info">Saving…</div>';
+    await apiFetch('/api/machines', { method:'POST', body: JSON.stringify(body) });
+    result.innerHTML = '<div class="alert alert-success">✅ Machine added!</div>';
+    showToast('Machine added!', 'success');
+    setTimeout(() => { closeAddModal(); loadData(); }, 900);
+  } catch(e) {
+    result.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+loadData();
+</script>
+
+<%- include('../layout/footer') %>

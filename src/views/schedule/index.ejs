@@ -1,0 +1,197 @@
+<%- include('../layout/header', { title: 'Schedule', activePage: 'schedule' }) %>
+
+<div class="page-header">
+  <h2>🗓️ Production Schedule</h2>
+  <button class="btn btn-warning" onclick="openGenModal()">⚡ Generate Schedule</button>
+</div>
+
+<!-- ── Date picker + controls ────────────────────────────────── -->
+<div class="filter-bar" style="margin-bottom:1.25rem;">
+  <input class="form-control" id="sched-date" type="date" style="max-width:180px;" />
+  <button class="btn btn-primary" onclick="loadSchedule()">View Schedule</button>
+  <select class="form-control" id="machine-filter" style="max-width:200px;" onchange="loadSchedule()">
+    <option value="">All Machines</option>
+  </select>
+  <span id="slot-count" style="font-size:.85rem;color:var(--text-muted);"></span>
+</div>
+
+<!-- ── Timeline table ─────────────────────────────────────────── -->
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><span class="card-title">Timeline View</span></div>
+  <div class="timeline-wrap">
+    <div id="timeline-container" style="padding:1rem;min-height:80px;">
+      <p style="color:var(--text-muted);text-align:center;">Select a date and click "View Schedule".</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Slots list table ────────────────────────────────────────── -->
+<div class="card">
+  <div class="card-header"><span class="card-title">Schedule Slots</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Order #</th><th>Machine</th><th>Start Time</th>
+          <th>End Time</th><th>Duration</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="slots-body">
+        <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted);">Select a date to view slots.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Generate schedule modal ────────────────────────────────── -->
+<div class="modal-overlay" id="gen-modal">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header">
+      <span class="modal-title">⚡ Generate Schedule</span>
+      <button class="modal-close" onclick="closeGenModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Schedule Start Date</label>
+        <input class="form-control" id="gen-date" type="date" />
+      </div>
+      <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem;">
+        Uses <strong>Earliest Due Date (EDD)</strong> algorithm and assigns orders
+        to the least-loaded operational machine.
+      </p>
+      <div class="form-actions">
+        <button class="btn btn-warning" onclick="runGenerate()">Generate</button>
+        <button class="btn btn-secondary" onclick="closeGenModal()">Cancel</button>
+      </div>
+      <div id="gen-result" style="margin-top:.75rem;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const today = new Date().toISOString().slice(0,10);
+document.getElementById('sched-date').value = today;
+document.getElementById('gen-date').value   = today;
+
+async function loadMachineFilter() {
+  try {
+    const res = await apiFetch('/api/machines');
+    const sel = document.getElementById('machine-filter');
+    (res.data || []).forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m._id; opt.textContent = m.name;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+async function loadSchedule() {
+  const date      = document.getElementById('sched-date').value;
+  const machineId = document.getElementById('machine-filter').value;
+  const tbody     = document.getElementById('slots-body');
+  if (!date) return;
+
+  let url = `/api/schedule?date=${date}`;
+  if (machineId) url += `&machineId=${machineId}`;
+
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1.5rem;">Loading…</td></tr>';
+  document.getElementById('timeline-container').innerHTML = '<p style="color:var(--text-muted);text-align:center;">Loading…</p>';
+
+  try {
+    const res   = await apiFetch(url);
+    const slots = res.data || [];
+    document.getElementById('slot-count').textContent = `${slots.length} slot(s)`;
+
+    if (!slots.length) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted);">No slots for ${date}.</td></tr>`;
+      document.getElementById('timeline-container').innerHTML = `<p style="color:var(--text-muted);text-align:center;">No slots on ${date}. Generate a schedule first.</p>`;
+      return;
+    }
+
+    // ── Render list table ────────────────────────────────────────
+    tbody.innerHTML = slots.map(s => {
+      const start = new Date(s.startTime);
+      const end   = new Date(s.endTime);
+      return `<tr>
+        <td class="td-mono"><strong>${s.orderNumber}</strong></td>
+        <td>${s.machineName}</td>
+        <td>${start.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td>
+        <td>${end.toLocaleTimeString([],   {hour:'2-digit',minute:'2-digit'})}</td>
+        <td>${s.durationFormatted ?? s.durationMinutes + ' min'}</td>
+        <td><span class="badge badge-${s.status}">${s.status}</span></td>
+      </tr>`;
+    }).join('');
+
+    // ── Render timeline ──────────────────────────────────────────
+    renderTimeline(slots);
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;">${e.message}</td></tr>`;
+  }
+}
+
+function renderTimeline(slots) {
+  // Group slots by machine
+  const machineMap = {};
+  slots.forEach(s => {
+    if (!machineMap[s.machineName]) machineMap[s.machineName] = [];
+    machineMap[s.machineName].push(s);
+  });
+
+  const hour2pct = mins => ((mins - 360) / (60 * 16)) * 100; // 06:00–22:00 = 100%
+
+  const rows = Object.entries(machineMap).map(([machine, mSlots]) => {
+    const slotBlocks = mSlots.map(s => {
+      const start = new Date(s.startTime);
+      const end   = new Date(s.endTime);
+      const startMins = start.getHours() * 60 + start.getMinutes();
+      const endMins   = end.getHours()   * 60 + end.getMinutes();
+      const left  = Math.max(0, hour2pct(startMins)).toFixed(1);
+      const width = Math.max(0.5, hour2pct(endMins) - hour2pct(startMins)).toFixed(1);
+      return `<div class="slot-block" style="position:absolute;left:${left}%;width:${width}%;top:5px;"
+                   title="${s.orderNumber} | ${start.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} – ${end.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}">
+                ${s.orderNumber}
+              </div>`;
+    }).join('');
+
+    return `<div style="display:flex;align-items:center;margin-bottom:.5rem;gap:.5rem;">
+      <div style="min-width:130px;font-weight:600;font-size:.82rem;color:var(--navy);">${machine}</div>
+      <div style="flex:1;position:relative;height:34px;background:var(--blue-light);border-radius:6px;overflow:hidden;">
+        ${slotBlocks}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Hour markers
+  const hours = Array.from({length:9},(_,i)=>`<div style="flex:1;font-size:.7rem;color:var(--text-muted);text-align:center;">${6+i*2}:00</div>`).join('');
+
+  document.getElementById('timeline-container').innerHTML = `
+    <div style="display:flex;margin-left:135px;margin-bottom:.25rem;">${hours}</div>
+    ${rows || '<p style="color:var(--text-muted);text-align:center;">No data.</p>'}
+  `;
+}
+
+// ── Generate modal ───────────────────────────────────────────────
+function openGenModal()  { document.getElementById('gen-modal').classList.add('open'); document.getElementById('gen-result').innerHTML=''; }
+function closeGenModal() { document.getElementById('gen-modal').classList.remove('open'); }
+
+async function runGenerate() {
+  const date   = document.getElementById('gen-date').value;
+  const result = document.getElementById('gen-result');
+  try {
+    result.innerHTML = '<div class="alert alert-info">Running EDD scheduling engine…</div>';
+    const res = await apiFetch('/api/schedule/generate', {
+      method: 'POST', body: JSON.stringify({ scheduleDate: date }),
+    });
+    result.innerHTML = `<div class="alert alert-success">✅ ${res.message}</div>`;
+    showToast(res.message, 'success');
+    setTimeout(() => { closeGenModal(); document.getElementById('sched-date').value = date; loadSchedule(); }, 1000);
+  } catch(e) {
+    result.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+loadMachineFilter();
+loadSchedule();
+</script>
+
+<%- include('../layout/footer') %>

@@ -1,0 +1,197 @@
+<%- include('../layout/header', { title: 'Products', activePage: 'products' }) %>
+
+<div class="page-header">
+  <h2>📦 Products</h2>
+  <button class="btn btn-primary" onclick="openAddModal()">+ Add Product</button>
+</div>
+
+<div id="alert-area"></div>
+
+<!-- ── Products table ─────────────────────────────────────────── -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">All Products</span>
+    <input class="form-control" id="search-input" placeholder="Search products…"
+           style="max-width:220px;" oninput="filterTable()" />
+  </div>
+  <div class="table-wrap">
+    <table id="products-table">
+      <thead>
+        <tr>
+          <th>Product Name</th><th>Category</th><th>Sizes / SKUs</th>
+          <th>SKU Count</th><th>Status</th><th>Created</th>
+        </tr>
+      </thead>
+      <tbody id="products-body">
+        <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted);">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Add Product Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-header">
+      <span class="modal-title">Add New Product</span>
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="product-form" onsubmit="submitProduct(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Product Name *</label>
+            <input class="form-control" name="name" required placeholder="e.g. Classic T-Shirt" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Category *</label>
+            <select class="form-control" name="category" required>
+              <option value="">— Select —</option>
+              <option>Tops</option><option>Bottoms</option>
+              <option>Outerwear</option><option>Accessories</option>
+              <option>Footwear</option><option>Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Size Variants</label>
+          <div style="display:grid;grid-template-columns:85px 1fr 115px 115px 36px;gap:.4rem;margin-bottom:.35rem;">
+            <span style="font-size:.72rem;color:var(--text-muted);font-weight:700;">SIZE</span>
+            <span style="font-size:.72rem;color:var(--text-muted);font-weight:700;">SKU</span>
+            <span style="font-size:.72rem;color:var(--text-muted);font-weight:700;">MACH MIN/UNIT</span>
+            <span style="font-size:.72rem;color:var(--text-muted);font-weight:700;">MATERIAL/UNIT</span>
+            <span></span>
+          </div>
+          <div id="size-rows"></div>
+          <button type="button" class="btn btn-sm btn-outline" style="margin-top:.5rem;" onclick="addSizeRow()">+ Add Size</button>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create Product</button>
+          <button type="button" class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
+        </div>
+        <div id="form-result" style="margin-top:.75rem;"></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+let allProducts = [];
+
+async function loadProducts() {
+  const tbody = document.getElementById('products-body');
+  try {
+    const res  = await apiFetch('/api/products');
+    allProducts = res.data || [];
+    renderTable(allProducts);
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;">${e.message}</td></tr>`;
+  }
+}
+
+function renderTable(products) {
+  const tbody = document.getElementById('products-body');
+  if (!products.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted);">No products yet. Add your first product.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = products.map(p => {
+    const sizeList = (p.sizes || []).map(s =>
+      `<span class="badge badge-in-progress" style="margin:.1rem;">${s.sizeLabel} · ${s.sku}</span>`
+    ).join(' ');
+    return `<tr>
+      <td><strong>${p.name}</strong></td>
+      <td>${p.category}</td>
+      <td>${sizeList}</td>
+      <td>${(p.sizes || []).length}</td>
+      <td><span class="badge ${p.isActive ? 'badge-ok' : 'badge-cancelled'}">${p.isActive ? 'Active' : 'Inactive'}</span></td>
+      <td>${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filterTable() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  renderTable(allProducts.filter(p =>
+    p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) ||
+    (p.sizes || []).some(s => s.sku.toLowerCase().includes(q))
+  ));
+}
+
+// ── Modal ──────────────────────────────────────────────────────
+function openAddModal() {
+  document.getElementById('add-modal').classList.add('open');
+  document.getElementById('size-rows').innerHTML = '';
+  document.getElementById('product-form').reset();
+  document.getElementById('form-result').innerHTML = '';
+  addSizeRow();
+}
+function closeAddModal() {
+  document.getElementById('add-modal').classList.remove('open');
+}
+
+// ── Size rows ──────────────────────────────────────────────────
+let sizeCount = 0;
+function addSizeRow() {
+  const id  = ++sizeCount;
+  const row = document.createElement('div');
+  row.className = 'size-row';
+  row.id = 'size-row-' + id;
+  row.innerHTML = `
+    <select class="form-control" name="sizeLabel_${id}" required>
+      <option value="">—</option>
+      <option>XS</option><option>S</option><option>M</option>
+      <option>L</option><option>XL</option><option>XXL</option>
+    </select>
+    <input class="form-control" name="sku_${id}" placeholder="PROD-S-BLK" required />
+    <input class="form-control" type="number" name="machMin_${id}" placeholder="12" min="0.1" step="0.1" required />
+    <input class="form-control" type="number" name="matQty_${id}" placeholder="1.2" min="0" step="0.01" required />
+    <button type="button" class="btn btn-sm btn-danger" onclick="removeSizeRow(${id})">✕</button>
+  `;
+  document.getElementById('size-rows').appendChild(row);
+}
+function removeSizeRow(id) {
+  const row = document.getElementById('size-row-' + id);
+  if (row && document.querySelectorAll('.size-row').length > 1) row.remove();
+}
+
+// ── Submit ─────────────────────────────────────────────────────
+async function submitProduct(event) {
+  event.preventDefault();
+  const form   = event.target;
+  const result = document.getElementById('form-result');
+  const sizes  = [];
+
+  document.querySelectorAll('.size-row').forEach(row => {
+    const id = row.id.replace('size-row-', '');
+    const sizeLabel           = form[`sizeLabel_${id}`]?.value;
+    const sku                 = form[`sku_${id}`]?.value?.trim().toUpperCase();
+    const machineMinutesPerUnit = parseFloat(form[`machMin_${id}`]?.value);
+    const materialQtyPerUnit    = parseFloat(form[`matQty_${id}`]?.value);
+    if (sizeLabel && sku) sizes.push({ sizeLabel, sku, machineMinutesPerUnit, materialQtyPerUnit });
+  });
+
+  const body = {
+    name:     form.name.value.trim(),
+    category: form.category.value,
+    sizes,
+  };
+
+  try {
+    result.innerHTML = '<div class="alert alert-info">Saving…</div>';
+    await apiFetch('/api/products', { method:'POST', body: JSON.stringify(body) });
+    result.innerHTML = '<div class="alert alert-success">✅ Product created! Inventory records initialised.</div>';
+    showToast('Product created!', 'success');
+    setTimeout(closeAddModal, 1200);
+    loadProducts();
+  } catch(e) {
+    result.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+loadProducts();
+</script>
+
+<%- include('../layout/footer') %>

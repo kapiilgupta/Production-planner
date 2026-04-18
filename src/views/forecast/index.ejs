@@ -1,0 +1,126 @@
+<%- include('../layout/header', { title: 'Demand Forecast', activePage: 'forecast' }) %>
+
+<div class="page-header">
+  <h2>📈 Demand Forecast</h2>
+</div>
+
+<!-- ── Generate form ──────────────────────────────────────────── -->
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><span class="card-title">Generate New Forecast (3-Period Moving Average)</span></div>
+  <div class="card-body">
+    <form id="forecast-form" onsubmit="generateForecast(event)">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Forecast Period (YYYY-MM) *</label>
+          <input class="form-control" id="fg-period" placeholder="e.g. 2025-09" required />
+        </div>
+        <div class="form-group" style="align-self:end;">
+          <button type="submit" class="btn btn-primary" style="width:100%;">📈 Run Forecast</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Historical Data (JSON) *</label>
+        <textarea class="form-control" id="fg-hist" rows="6" required
+          placeholder='{"TSHIRT-S-BLK":[{"period":"2025-06","soldQty":120},{"period":"2025-07","soldQty":140},{"period":"2025-08","soldQty":130}],"TSHIRT-M-BLK":[{"period":"2025-06","soldQty":80},{"period":"2025-07","soldQty":90},{"period":"2025-08","soldQty":100}]}'></textarea>
+        <small style="color:var(--text-muted);font-size:.75rem;">Keys = SKUs. Each array = last N months of sold quantities (3 periods recommended).</small>
+      </div>
+      <div id="fg-result"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ── View existing forecasts ────────────────────────────────── -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Saved Forecasts</span>
+    <div style="display:flex;gap:.5rem;align-items:center;">
+      <select class="form-control" id="period-select" style="max-width:160px;" onchange="loadForecasts()">
+        <option value="">— Select Period —</option>
+      </select>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>SKU</th><th>Product</th><th>Period</th>
+          <th>Forecast Qty</th><th>Actual Qty</th><th>Accuracy</th>
+          <th>Method</th><th>Confidence</th>
+        </tr>
+      </thead>
+      <tbody id="forecast-body">
+        <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">Select a period to view forecasts.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function loadPeriods() {
+  try {
+    const res = await apiFetch('/api/forecast/periods');
+    const sel = document.getElementById('period-select');
+    (res.data || []).forEach(p => {
+      const opt = document.createElement('option'); opt.value = opt.textContent = p;
+      sel.appendChild(opt);
+    });
+    if (res.data?.length) { sel.value = res.data[0]; loadForecasts(); }
+  } catch(e) { showToast('Could not load periods: ' + e.message, 'error'); }
+}
+
+async function loadForecasts() {
+  const period = document.getElementById('period-select').value;
+  const tbody  = document.getElementById('forecast-body');
+  if (!period) return;
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:1.5rem;">Loading…</td></tr>';
+  try {
+    const res = await apiFetch(`/api/forecast?period=${encodeURIComponent(period)}`);
+    const rows = res.data || [];
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">No forecasts for ${period}.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map(f => `
+      <tr>
+        <td class="td-mono"><strong>${f.sku}</strong></td>
+        <td>${f.productId?.name ?? '—'}</td>
+        <td><span class="badge badge-in-progress">${f.forecastPeriod}</span></td>
+        <td><strong>${f.forecastQty?.toLocaleString()}</strong></td>
+        <td>${f.actualQty != null ? f.actualQty.toLocaleString() : '<span style="color:var(--text-muted);">—</span>'}</td>
+        <td>${f.forecastAccuracyPct != null ? f.forecastAccuracyPct + '%' : '<span style="color:var(--text-muted);">Pending</span>'}</td>
+        <td><span class="badge badge-scheduled">${(f.method||'').replace('_',' ')}</span></td>
+        <td>${f.confidencePct ?? 80}%</td>
+      </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--red);">${e.message}</td></tr>`;
+  }
+}
+
+async function generateForecast(event) {
+  event.preventDefault();
+  const period  = document.getElementById('fg-period').value.trim();
+  const histRaw = document.getElementById('fg-hist').value.trim();
+  const result  = document.getElementById('fg-result');
+  let historicalData;
+  try { historicalData = JSON.parse(histRaw); }
+  catch { result.innerHTML = '<div class="alert alert-error">Invalid JSON. Please check the historical data format.</div>'; return; }
+  try {
+    result.innerHTML = '<div class="alert alert-info">Running moving average algorithm…</div>';
+    const res = await apiFetch('/api/forecast/generate', {
+      method: 'POST', body: JSON.stringify({ forecastPeriod: period, historicalData }),
+    });
+    result.innerHTML = `<div class="alert alert-success">✅ ${res.count} forecast(s) generated for period <strong>${period}</strong>.</div>`;
+    showToast('Forecast generated!', 'success');
+    // Reload period selector then show new period
+    await loadPeriods();
+    document.getElementById('period-select').value = period;
+    loadForecasts();
+  } catch(e) {
+    result.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+loadPeriods();
+</script>
+
+<%- include('../layout/footer') %>

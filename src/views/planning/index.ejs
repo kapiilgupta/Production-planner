@@ -1,0 +1,200 @@
+<%- include('../layout/header', { title: 'Production Orders', activePage: 'planning' }) %>
+
+<div class="page-header">
+  <h2>🗂️ Production Orders</h2>
+  <button class="btn btn-success" onclick="openGenerateModal()">⚡ Generate Orders</button>
+</div>
+
+<!-- ── Filter bar ─────────────────────────────────────────────── -->
+<div class="filter-bar">
+  <select class="form-control" id="status-filter" style="max-width:180px;" onchange="loadOrders()">
+    <option value="">All Statuses</option>
+    <option value="pending">Pending</option>
+    <option value="in-progress">In Progress</option>
+    <option value="completed">Completed</option>
+    <option value="cancelled">Cancelled</option>
+  </select>
+  <input class="form-control" id="orders-search" placeholder="Search order # or product…"
+         style="max-width:220px;" oninput="filterOrders()" />
+  <span id="orders-count" style="font-size:.85rem;color:var(--text-muted);"></span>
+</div>
+
+<!-- ── Orders table ───────────────────────────────────────────── -->
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Order #</th><th>Product</th><th>Due Date</th>
+          <th>Items</th><th>Total Qty</th><th>Machine Mins</th>
+          <th>Status</th><th>Update Status</th>
+        </tr>
+      </thead>
+      <tbody id="orders-body">
+        <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Order detail panel (slides open) ──────────────────────── -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-header">
+      <span class="modal-title" id="detail-order-num">Order Detail</span>
+      <button class="modal-close" onclick="closeDetailModal()">✕</button>
+    </div>
+    <div class="modal-body" id="detail-body"></div>
+  </div>
+</div>
+
+<!-- ── Generate orders modal ─────────────────────────────────── -->
+<div class="modal-overlay" id="gen-modal">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header">
+      <span class="modal-title">⚡ Generate Production Orders</span>
+      <button class="modal-close" onclick="closeGenerateModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Forecast Period (YYYY-MM)</label>
+        <input class="form-control" id="gen-period" placeholder="e.g. 2025-09" />
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-success" onclick="runGenerate()">Generate</button>
+        <button class="btn btn-secondary" onclick="closeGenerateModal()">Cancel</button>
+      </div>
+      <div id="gen-result" style="margin-top:.75rem;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let allOrders = [];
+
+async function loadOrders() {
+  const tbody  = document.getElementById('orders-body');
+  const status = document.getElementById('status-filter').value;
+  const url    = '/api/production-orders' + (status ? `?status=${status}` : '');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:1.5rem;">Loading…</td></tr>';
+  try {
+    const res  = await apiFetch(url);
+    allOrders  = res.data || [];
+    document.getElementById('orders-count').textContent = `${allOrders.length} order(s)`;
+    renderOrders(allOrders);
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--red);text-align:center;">${e.message}</td></tr>`;
+  }
+}
+
+function renderOrders(orders) {
+  const tbody = document.getElementById('orders-body');
+  if (!orders.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted);">No orders found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = orders.map(o => {
+    const due     = o.dueDate ? new Date(o.dueDate) : null;
+    const overdue = due && due < new Date() && o.status === 'pending';
+    return `<tr>
+      <td class="td-mono">
+        <a href="#" onclick="showDetail('${o._id}');return false;" style="color:var(--blue);font-weight:700;">${o.orderNumber}</a>
+      </td>
+      <td>${o.productId?.name ?? '—'}</td>
+      <td style="${overdue?'color:var(--red);font-weight:600;':''}">
+        ${due ? due.toLocaleDateString() : '—'}${overdue?' ⚠️':''}
+      </td>
+      <td>${o.items?.length ?? 0}</td>
+      <td>${(o.totalPlannedQty||0).toLocaleString()}</td>
+      <td>${(o.totalMachineMinutes||0).toLocaleString()} min</td>
+      <td><span class="badge badge-${o.status}">${o.status}</span></td>
+      <td>
+        <select class="form-control" style="padding:.2rem .5rem;font-size:.8rem;max-width:130px;"
+                onchange="updateStatus('${o._id}', this.value, this)">
+          <option value="pending"     ${o.status==='pending'?'selected':''}>Pending</option>
+          <option value="in-progress" ${o.status==='in-progress'?'selected':''}>In Progress</option>
+          <option value="completed"   ${o.status==='completed'?'selected':''}>Completed</option>
+          <option value="cancelled"   ${o.status==='cancelled'?'selected':''}>Cancelled</option>
+        </select>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filterOrders() {
+  const q = document.getElementById('orders-search').value.toLowerCase();
+  renderOrders(allOrders.filter(o =>
+    o.orderNumber.toLowerCase().includes(q) ||
+    (o.productId?.name||'').toLowerCase().includes(q)
+  ));
+}
+
+async function updateStatus(id, status, selectEl) {
+  try {
+    await apiFetch(`/api/production-orders/${id}/status`, {
+      method: 'PATCH', body: JSON.stringify({ status }),
+    });
+    showToast(`Status updated to "${status}"`, 'success');
+    loadOrders();
+  } catch(e) {
+    showToast(e.message, 'error');
+    selectEl.value = selectEl.getAttribute('data-original') || 'pending';
+  }
+}
+
+async function showDetail(id) {
+  document.getElementById('detail-modal').classList.add('open');
+  document.getElementById('detail-body').innerHTML = '<div style="text-align:center;padding:2rem;">Loading…</div>';
+  try {
+    const res   = await apiFetch(`/api/production-orders/${id}`);
+    const order = res.data;
+    document.getElementById('detail-order-num').textContent = order.orderNumber;
+    document.getElementById('detail-body').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem 1.5rem;margin-bottom:1rem;font-size:.875rem;">
+        <div><span style="color:var(--text-muted);">Product</span><br><strong>${order.productId?.name??'—'}</strong></div>
+        <div><span style="color:var(--text-muted);">Status</span><br><span class="badge badge-${order.status}">${order.status}</span></div>
+        <div><span style="color:var(--text-muted);">Due Date</span><br><strong>${order.dueDate?new Date(order.dueDate).toLocaleDateString():'—'}</strong></div>
+        <div><span style="color:var(--text-muted);">Created</span><br>${new Date(order.createdAt).toLocaleDateString()}</div>
+      </div>
+      <div class="section-title">Line Items</div>
+      <table style="width:100%;font-size:.85rem;">
+        <thead><tr><th>Size</th><th>SKU</th><th>Planned Qty</th><th>Mach Min/Unit</th><th>Total Mins</th></tr></thead>
+        <tbody>${(order.items||[]).map(i=>`
+          <tr>
+            <td><span class="badge badge-in-progress">${i.sizeLabel}</span></td>
+            <td class="td-mono">${i.sku}</td>
+            <td><strong>${i.plannedQty.toLocaleString()}</strong></td>
+            <td>${i.machineMinutesPerUnit}</td>
+            <td>${(i.plannedQty*i.machineMinutesPerUnit).toFixed(0)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    document.getElementById('detail-body').innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+function closeDetailModal() { document.getElementById('detail-modal').classList.remove('open'); }
+function openGenerateModal() { document.getElementById('gen-modal').classList.add('open'); document.getElementById('gen-result').innerHTML=''; }
+function closeGenerateModal() { document.getElementById('gen-modal').classList.remove('open'); }
+
+async function runGenerate() {
+  const period = document.getElementById('gen-period').value.trim();
+  const result = document.getElementById('gen-result');
+  try {
+    result.innerHTML = '<div class="alert alert-info">Running planning engine…</div>';
+    const res = await apiFetch('/api/production-orders/generate', {
+      method: 'POST', body: JSON.stringify({ forecastPeriod: period }),
+    });
+    result.innerHTML = `<div class="alert alert-success">✅ ${res.message}</div>`;
+    showToast(res.message, 'success');
+    setTimeout(() => { closeGenerateModal(); loadOrders(); }, 1200);
+  } catch(e) {
+    result.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+loadOrders();
+</script>
+
+<%- include('../layout/footer') %>

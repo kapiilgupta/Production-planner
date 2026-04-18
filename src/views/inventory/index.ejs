@@ -1,0 +1,156 @@
+<%- include('../layout/header', { title: 'Inventory', activePage: 'inventory' }) %>
+
+<div class="page-header">
+  <h2>🏭 Inventory</h2>
+  <a href="/inventory/alerts" class="btn btn-danger" id="alerts-btn">⚠️ Low Stock Alerts: —</a>
+</div>
+
+<div class="filter-bar">
+  <input class="form-control" id="inv-search" placeholder="Search SKU or product…"
+         style="max-width:240px;" oninput="filterInventory()" />
+  <select class="form-control" id="inv-filter" style="max-width:160px;" onchange="filterInventory()">
+    <option value="all">All Stock</option>
+    <option value="low">Low Stock Only</option>
+    <option value="ok">OK Stock</option>
+  </select>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>SKU</th><th>Product</th><th>Size</th>
+          <th>Qty on Hand</th><th>Reorder Point</th><th>Status</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="inv-body">
+        <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted);">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Inline edit modal ───────────────────────────────────────── -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header">
+      <span class="modal-title">Update Stock — <span id="edit-sku-label"></span></span>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Quantity on Hand</label>
+        <input class="form-control" id="edit-qty" type="number" min="0" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reorder Point</label>
+        <input class="form-control" id="edit-reorder" type="number" min="0" />
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="saveEdit()">Save</button>
+        <button class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+      </div>
+      <div id="edit-result" style="margin-top:.75rem;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let allInv = [];
+let editSku = null;
+
+async function loadInventory() {
+  const tbody = document.getElementById('inv-body');
+  try {
+    const [invRes, alertsRes] = await Promise.all([
+      apiFetch('/api/inventory'),
+      apiFetch('/api/inventory/alerts'),
+    ]);
+    allInv = invRes.data || [];
+    document.getElementById('alerts-btn').textContent = `⚠️ Low Stock Alerts: ${alertsRes.count}`;
+    renderInv(allInv);
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--red);text-align:center;">${e.message}</td></tr>`;
+  }
+}
+
+function renderInv(records) {
+  const tbody = document.getElementById('inv-body');
+  if (!records.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted);">No inventory records found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = records.map(r => {
+    const low    = r.quantityOnHand < r.reorderPoint;
+    const pctFill= Math.min(100, Math.round((r.quantityOnHand / (r.reorderPoint * 2 || 1)) * 100));
+    return `<tr>
+      <td class="td-mono"><strong>${r.sku}</strong></td>
+      <td>${r.productId?.name ?? '—'}</td>
+      <td>${r.productId?.category ?? '—'}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.5rem;">
+          <strong style="color:${low?'var(--red)':'var(--green)'}">${r.quantityOnHand.toLocaleString()}</strong>
+          <div class="util-bar" style="width:70px;">
+            <div class="util-bar-fill ${low?'over':''}" style="width:${pctFill}%"></div>
+          </div>
+        </div>
+      </td>
+      <td>${r.reorderPoint}</td>
+      <td><span class="badge ${low ? 'badge-low' : 'badge-ok'}">${low ? '⚠ Low' : '✓ OK'}</span></td>
+      <td>
+        <button class="btn btn-sm btn-outline" onclick="openEditModal('${r.sku}',${r.quantityOnHand},${r.reorderPoint})">
+          ✏ Edit
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filterInventory() {
+  const q = document.getElementById('inv-search').value.toLowerCase();
+  const f = document.getElementById('inv-filter').value;
+  let list = allInv.filter(r =>
+    r.sku.toLowerCase().includes(q) ||
+    (r.productId?.name || '').toLowerCase().includes(q)
+  );
+  if (f === 'low') list = list.filter(r => r.quantityOnHand < r.reorderPoint);
+  if (f === 'ok')  list = list.filter(r => r.quantityOnHand >= r.reorderPoint);
+  renderInv(list);
+}
+
+function openEditModal(sku, qty, reorder) {
+  editSku = sku;
+  document.getElementById('edit-sku-label').textContent = sku;
+  document.getElementById('edit-qty').value    = qty;
+  document.getElementById('edit-reorder').value= reorder;
+  document.getElementById('edit-result').innerHTML = '';
+  document.getElementById('edit-modal').classList.add('open');
+}
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.remove('open');
+  editSku = null;
+}
+
+async function saveEdit() {
+  const qty    = parseInt(document.getElementById('edit-qty').value);
+  const reorder= parseInt(document.getElementById('edit-reorder').value);
+  const result = document.getElementById('edit-result');
+  try {
+    result.innerHTML = '<div class="alert alert-info">Saving…</div>';
+    await apiFetch(`/api/inventory/${editSku}`, {
+      method: 'PUT',
+      body:   JSON.stringify({ quantityOnHand: qty, reorderPoint: reorder }),
+    });
+    result.innerHTML = '<div class="alert alert-success">✅ Updated!</div>';
+    showToast('Inventory updated', 'success');
+    setTimeout(() => { closeEditModal(); loadInventory(); }, 800);
+  } catch(e) {
+    result.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+loadInventory();
+</script>
+
+<%- include('../layout/footer') %>

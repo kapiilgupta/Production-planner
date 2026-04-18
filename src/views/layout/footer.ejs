@@ -1,0 +1,41 @@
+  </main><!-- /.page-content -->
+</div><!-- /.main-wrapper -->
+
+<!-- ── Toast container ───────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<!-- ── Overlay (mobile sidebar close) ────────────────────────── -->
+<div id="sidebar-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150;" onclick="closeSidebar()"></div>
+
+<script>
+  // ── Sidebar toggle ──────────────────────────────────────────
+  const sidebar  = document.getElementById('sidebar');
+  const overlay  = document.getElementById('sidebar-overlay');
+  const hamburger= document.getElementById('hamburger');
+
+  hamburger?.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    overlay.style.display = sidebar.classList.contains('open') ? 'block' : 'none';
+  });
+
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    overlay.style.display = 'none';
+  }
+
+  // ── Live clock ──────────────────────────────────────────────
+  const clockEl = document.getElementById('clock');
+  const tick = () => {
+    if (clockEl) clockEl.textContent = new Date().toLocaleTimeString();
+  };
+  tick();
+  setInterval(tick, 1000);
+
+  // ── Auto-dismiss alerts ─────────────────────────────────────
+  document.querySelectorAll('.alert[data-auto-dismiss]').forEach(el => {
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .4s';
+      setTimeout(() => el.remove(), 400); }, 4000);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>404 – Page Not Found | Production Planner</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <%- include('partials/navbar') %>
+  <main class="main-content center-content">
+    <div class="error-box">
+      <div class="error-code">404</div>
+      <h1 class="error-title">Page Not Found</h1>
+      <p class="error-msg">The page you're looking for doesn't exist.</p>
+      <a href="/" class="btn btn-primary">← Back to Dashboard</a>
+    </div>
+  </main>
+  <%- include('partials/footer') %>
+</body>
+</html>

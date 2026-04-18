@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> | Production Planner</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <%- include('../partials/navbar') %>
+  <main class="main-content">
+    <div class="page-header">
+      <h1 class="page-title"><%= title %></h1>
+      <a href="/forecast" class="btn btn-secondary">← Back</a>
+    </div>
+
+    <% if (errors.length > 0) { %>
+      <div class="alert alert-error"><ul><% errors.forEach(e => { %><li><%= e.msg %></li><% }) %></ul></div>
+    <% } %>
+
+    <div class="card form-card">
+      <form method="POST" action="/forecast">
+        <div class="form-group">
+          <label for="product">Product *</label>
+          <select id="product" name="product" class="input" required>
+            <option value="">-- Select Product --</option>
+            <% products.forEach(p => { %>
+              <option value="<%= p._id %>"><%= p.name %> (<%= p.sku %>)</option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="forecastDate">Forecast Date *</label>
+            <input id="forecastDate" type="date" name="forecastDate" class="input" required />
+          </div>
+          <div class="form-group">
+            <label for="forecastPeriod">Period *</label>
+            <select id="forecastPeriod" name="forecastPeriod" class="input">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly" selected>Monthly</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="predictedDemand">Predicted Demand *</label>
+            <input id="predictedDemand" type="number" name="predictedDemand" min="0" class="input" required />
+          </div>
+          <div class="form-group">
+            <label for="confidence">Confidence (%)</label>
+            <input id="confidence" type="number" name="confidence" min="0" max="100" class="input" value="80" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="method">Method</label>
+          <select id="method" name="method" class="input">
+            <option value="moving_average">Moving Average</option>
+            <option value="weighted_average">Weighted Average</option>
+            <option value="exponential_smoothing">Exponential Smoothing</option>
+            <option value="manual">Manual</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create Forecast</button>
+          <a href="/forecast" class="btn btn-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </main>
+  <%- include('../partials/footer') %>
+  <script src="/js/main.js"></script>
+</body>
+</html>
